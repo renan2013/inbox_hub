@@ -70,9 +70,43 @@ if ($clientId === 'inbox_cefi') $clientId = 'cefi';
 if ($clientId === 'bpm_unela') $clientId = 'unela';
 $platMeta    = $platforms[$clientId] ?? [];
 
+$action = trim($payload['action'] ?? 'create');
+
+if ($action === 'delete_ticket') {
+    $localId = $payload['local_id'] ?? '';
+    $hubId   = $payload['hub_id'] ?? '';
+    $beforeCount = count($ticketState['tickets']);
+    $ticketState['tickets'] = array_values(array_filter($ticketState['tickets'], function ($tk) use ($clientId, $localId, $hubId) {
+        if ($localId === 'all' && ($tk['client_id'] ?? '') === $clientId) {
+            return false;
+        }
+        if ($hubId !== '' && ($tk['hub_id'] ?? '') === $hubId) {
+            return false;
+        }
+        if ($localId !== '' && $localId !== 'all' && ($tk['client_id'] ?? '') === $clientId && (string)($tk['id'] ?? '') === (string)$localId) {
+            return false;
+        }
+        return true;
+    }));
+    save_hub_tickets($ticketState);
+    echo json_encode([
+        'success' => true,
+        'message' => 'Ticket(s) eliminado(s) en Inbox Cloud Hub.',
+        'removed' => $beforeCount - count($ticketState['tickets']),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+$localIdStr = (string)($payload['local_id'] ?? uniqid());
+
+// Evitar duplicados si ya existe el mismo client_id + local_id
+$ticketState['tickets'] = array_values(array_filter($ticketState['tickets'], function ($tk) use ($clientId, $localIdStr) {
+    return !(($tk['client_id'] ?? '') === $clientId && (string)($tk['id'] ?? '') === $localIdStr);
+}));
+
 $ticket = [
-    'hub_id'          => 'AV-' . strtoupper(substr(uniqid(), -6)),
-    'id'              => $payload['local_id'] ?? uniqid(),
+    'hub_id'          => 'AV-' . strtoupper($clientId) . '-' . $localIdStr,
+    'id'              => $localIdStr,
     'client_id'       => $clientId,
     'client_siglas'   => $platMeta['siglas'] ?? strtoupper($payload['client_siglas'] ?? $clientId),
     'client_nombre'   => $platMeta['nombre'] ?? ($payload['client_nombre'] ?? $clientId),

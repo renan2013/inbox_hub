@@ -980,6 +980,152 @@ function save_hub_tickets(array $data): bool {
 }
 
 /**
+ * Envía una acción sobre un ticket (update_ticket o delete_ticket) desde el Hub hacia la plataforma cliente.
+ */
+function push_ticket_action_to_platform(array $platform, string $action, $localId, string $estado = '', string $solucion = ''): bool {
+    $endpoint = trim($platform['sync_endpoint'] ?? '');
+    if (empty($endpoint)) {
+        return false;
+    }
+    $payloadData = [
+        'action'    => $action,
+        'client_id' => $platform['id'],
+        'local_id'  => $localId,
+        'estado'    => $estado,
+        'solucion'  => $solucion,
+        'timestamp' => time(),
+    ];
+    $jsonPayload = json_encode($payloadData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $signature   = hash_hmac('sha256', $jsonPayload, INBOX_HUB_MASTER_SECRET);
+
+    $ch = curl_init($endpoint);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $jsonPayload,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'X-Inbox-Hub-Signature: ' . $signature,
+            'X-Inbox-Client-Id: ' . $platform['id'],
+        ],
+        CURLOPT_USERAGENT      => 'InboxCloudHub/2.5',
+        CURLOPT_TIMEOUT        => 6,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+    ]);
+    $resp = @curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    @curl_close($ch);
+    return ($resp !== false && $code >= 200 && $code < 300);
+}
+
+/**
+ * Sincroniza (Pull) los reportes de avería existentes en las plataformas conectadas (CEFI / UNELA)
+ * hacia el Hub Central para asegurar que cualquier reporte aparezca siempre en hub.renangalvan.net.
+ */
+function sync_tickets_from_platforms(array &$ticketState, array $platforms): int {
+    $imported = 0;
+    if (!isset($ticketState['tickets']) || !is_array($ticketState['tickets'])) {
+        $ticketState['tickets'] = [];
+    }
+
+    foreach ($platforms as $cid => $plat) {
+        $endpoint = trim($plat['sync_endpoint'] ?? '');
+        if ($endpoint === '') continue;
+
+        $payloadData = [
+            'action'    => 'fetch_tickets',
+            'client_id' => $cid,
+            'timestamp' => time(),
+        ];
+        $jsonPayload = json_encode($payloadData, JSON_UNESCAPED_UNICODE);
+        $signature   = hash_hmac('sha256', $jsonPayload, INBOX_HUB_MASTER_SECRET);
+
+        $ch = curl_init($endpoint);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $jsonPayload,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Accept: application/json',
+                'X-Inbox-Hub-Signature: ' . $signature,
+                'X-Inbox-Client-Id: ' . $cid,
+            ],
+            CURLOPT_USERAGENT      => 'InboxCloudHub/2.5',
+            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_FOLLOWLOCATION => true,
+        ]);
+        $resp = @curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        @curl_close($ch);
+
+        if ($resp === false || $code < 200 || $code >= 300) {
+            continue;
+        }
+        $dec = json_decode($resp, true);
+        if (!is_array($dec) || empty($dec['success']) || !isset($dec['tickets']) || !is_array($dec['tickets'])) {
+            continue;
+        }
+
+        // Mapear los IDs remotos que siguen vivos en la plataforma
+        $remoteAliveIds = [];
+        foreach ($dec['tickets'] as $rt) {
+            $lid = (string)($rt['local_id'] ?? '');
+            if ($lid === '') continue;
+            $remoteAliveIds[$lid] = true;
+
+            $found = false;
+            foreach ($ticketState['tickets'] as &$existing) {
+                if (($existing['client_id'] ?? '') === $cid && (string)($existing['id'] ?? '') === $lid) {
+                    $existing['estado']   = $rt['estado'] ?? $existing['estado'];
+                    $existing['solucion'] = $rt['solucion'] ?? ($existing['solucion'] ?? '');
+                    if (!empty($rt['evidencia_url']) && empty($existing['evidencia_url'])) {
+                        $existing['evidencia_url'] = $rt['evidencia_url'];
+                    }
+                    $found = true;
+                    break;
+                }
+            }
+            unset($existing);
+
+            if (!$found) {
+                array_unshift($ticketState['tickets'], [
+                    'hub_id'         => 'AV-' . strtoupper($cid) . '-' . $lid,
+                    'id'             => $lid,
+                    'client_id'      => $cid,
+                    'client_siglas'  => $plat['siglas'] ?? strtoupper($cid),
+                    'client_nombre'  => $plat['nombre'] ?? $cid,
+                    'titulo'         => $rt['titulo'] ?? 'Reporte de Avería',
+                    'etiqueta'       => $rt['etiqueta'] ?? '🟠 Fallo en Módulo',
+                    'prioridad'      => $rt['prioridad'] ?? 'alta',
+                    'problema'       => $rt['problema'] ?? '',
+                    'solucion'       => $rt['solucion'] ?? '',
+                    'estado'         => $rt['estado'] ?? 'reportado',
+                    'url_origen'     => $rt['url_origen'] ?? ($plat['url'] ?? ''),
+                    'evidencia_url'  => $rt['evidencia_url'] ?? '',
+                    'usuario_nombre' => $rt['usuario_nombre'] ?? 'Usuario',
+                    'usuario_email'  => $rt['usuario_email'] ?? '',
+                    'fecha_creacion' => $rt['fecha_creacion'] ?? date('Y-m-d H:i:s'),
+                ]);
+                $imported++;
+            }
+        }
+    }
+
+    if ($imported > 0) {
+        save_hub_tickets($ticketState);
+    }
+    return $imported;
+}
+
+/**
  * Dispara alerta de nueva avería hacia Webhook n8n (WhatsApp) y Correo Electrónico del Fabricante.
  */
 function dispatch_hub_ticket_notifications(array $ticket, array $settings): array {

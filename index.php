@@ -74,6 +74,11 @@ $flashWarning = '';
 $flashError   = '';
 $ticketState  = load_hub_tickets();
 
+// Auto-sincronizar averías desde las plataformas conectadas al abrir el Hub autenticado
+if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['export_client'])) {
+    sync_tickets_from_platforms($ticketState, $platforms);
+}
+
 // Procesar acciones del Hub autenticado
 if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['hub_action'] ?? '';
@@ -105,15 +110,15 @@ if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'url_origen'     => 'https://hub.renangalvan.net',
             'evidencia_url'  => '',
             'usuario_nombre' => 'Renan Galván (Fabricante)',
-            'usuario_email'  => $ticketState['settings']['admin_email'] ?? 'renan@renangalvan.net',
+            'usuario_email'  => INBOX_CREATOR_EMAIL,
             'usuario_rol'    => 'SuperAdmin',
             'fecha_creacion' => date('Y-m-d H:i:s'),
         ];
         $resAlert = dispatch_hub_ticket_notifications($sampleTicket, $ticketState['settings']);
-        $flashSuccess = "<strong>Prueba de Alerta Disparada:</strong> WhatsApp n8n: " . ($resAlert['whatsapp_n8n'] ? '✅ Enviado' : '⚠️ Sin Webhook / No conectado') . " | Correo: " . ($resAlert['email'] ? '✅ Enviado' : '⚠️ Pendiente');
+        $flashSuccess = "<strong>Prueba de Alerta Disparada:</strong> WhatsApp n8n: " . ($resAlert['whatsapp_n8n'] ? '✅ Enviado' : '⚠️ Sin Webhook / No conectado') . " | Correo (" . INBOX_CREATOR_EMAIL . "): " . ($resAlert['email'] ? '✅ Enviado' : '⚠️ Pendiente');
     }
 
-    // C. Actualizar estado o solución de una avería en el Hub
+    // C. Actualizar estado o solución de una avería en el Hub y propagarlo a la plataforma cliente
     if ($action === 'update_ticket_status') {
         $hubId     = trim($_POST['hub_id'] ?? '');
         $newStatus = trim($_POST['estado'] ?? 'solucionado');
@@ -123,12 +128,50 @@ if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tk['estado']   = $newStatus;
                 $tk['solucion'] = $solucion;
                 $tk['fecha_solucion'] = date('Y-m-d H:i:s');
+                $tClient = $tk['client_id'] ?? '';
+                if (isset($platforms[$tClient]) && !empty($tk['id'])) {
+                    push_ticket_action_to_platform($platforms[$tClient], 'update_ticket', $tk['id'], $newStatus, $solucion);
+                }
                 break;
             }
         }
         unset($tk);
         save_hub_tickets($ticketState);
-        $flashSuccess = "Estado de la avería <strong>" . htmlspecialchars($hubId) . "</strong> actualizado a <strong>" . strtoupper(htmlspecialchars($newStatus)) . "</strong>.";
+        $flashSuccess = "Estado de la avería <strong>" . htmlspecialchars($hubId) . "</strong> actualizado a <strong>" . strtoupper(htmlspecialchars($newStatus)) . "</strong> y sincronizado con la plataforma.";
+    }
+
+    // D. Eliminar una avería individual (de prueba o falsa) en el Hub y en la plataforma cliente
+    if ($action === 'delete_ticket') {
+        $hubId = trim($_POST['hub_id'] ?? '');
+        $ticketState['tickets'] = array_values(array_filter($ticketState['tickets'], function ($tk) use ($hubId, $platforms) {
+            if (($tk['hub_id'] ?? '') === $hubId) {
+                $tClient = $tk['client_id'] ?? '';
+                if (isset($platforms[$tClient]) && !empty($tk['id'])) {
+                    push_ticket_action_to_platform($platforms[$tClient], 'delete_ticket', $tk['id']);
+                }
+                return false;
+            }
+            return true;
+        }));
+        save_hub_tickets($ticketState);
+        $flashSuccess = "Reporte de avería <strong>" . htmlspecialchars($hubId) . "</strong> eliminado permanentemente del Hub y de la plataforma.";
+    }
+
+    // E. Eliminar TODAS las averías (limpiar pruebas) en el Hub y en las plataformas
+    if ($action === 'delete_all_tickets') {
+        foreach ($platforms as $cid => $plat) {
+            push_ticket_action_to_platform($plat, 'delete_ticket', 'all');
+        }
+        $ticketState['tickets'] = [];
+        save_hub_tickets($ticketState);
+        $flashSuccess = "<strong>¡Bandeja de Averías Limpiada!</strong> Todos los reportes de prueba fueron eliminados del Hub y de las plataformas.";
+    }
+
+    // F. Sincronizar manualmente averías desde todas las plataformas
+    if ($action === 'sync_tickets') {
+        $imp = sync_tickets_from_platforms($ticketState, $platforms);
+        save_hub_tickets($ticketState);
+        $flashSuccess = "<strong>Sincronización de Averías Completada:</strong> Se verificaron todas las plataformas (" . $imp . " reporte(s) nuevo(s) importado(s)).";
     }
 
     // 0. Escanear en vivo nuevos menús / sub-ítems creados en el código de la plataforma cliente
@@ -674,6 +717,20 @@ foreach ($tree as $mKey => $mMeta) {
                 <span class="badge bg-danger rounded-pill px-3 py-2">🔴 Pendientes: <?= $countRep ?></span>
                 <span class="badge bg-warning text-dark rounded-pill px-3 py-2">🟠 En Revisión: <?= $countRev ?></span>
                 <span class="badge bg-success rounded-pill px-3 py-2">🟢 Solucionadas: <?= $countSol ?></span>
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="hub_action" value="sync_tickets">
+                    <button type="submit" class="btn btn-sm btn-info fw-bold rounded-pill px-3 text-dark" title="Sincronizar reportes en vivo desde CEFI y UNELA">
+                        <i class="bi bi-arrow-repeat me-1"></i>Sincronizar Averías
+                    </button>
+                </form>
+                <?php if (!empty($allTickets)): ?>
+                <form method="POST" class="d-inline" onsubmit="return confirm('¿Eliminar TODOS los reportes de avería de prueba tanto del Hub como de las plataformas?');">
+                    <input type="hidden" name="hub_action" value="delete_all_tickets">
+                    <button type="submit" class="btn btn-sm btn-outline-light fw-bold rounded-pill px-3">
+                        <i class="bi bi-trash3-fill text-danger me-1"></i>Borrar Todas (Pruebas)
+                    </button>
+                </form>
+                <?php endif; ?>
                 <button type="button" class="btn btn-sm btn-light fw-bold rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#modalCentroAverias">
                     <i class="bi bi-whatsapp text-success me-1"></i>Configurar Webhook n8n / Probar Alerta
                 </button>
@@ -740,7 +797,7 @@ foreach ($tree as $mKey => $mMeta) {
                                         <?php endif; ?>
                                     </td>
                                     <td class="pe-4">
-                                        <form method="POST" class="d-flex flex-column gap-1">
+                                        <form method="POST" class="d-flex flex-column gap-1 mb-1">
                                             <input type="hidden" name="hub_action" value="update_ticket_status">
                                             <input type="hidden" name="hub_id" value="<?= htmlspecialchars($tk['hub_id'] ?? '') ?>">
                                             <div class="d-flex gap-1">
@@ -752,6 +809,13 @@ foreach ($tree as $mKey => $mMeta) {
                                                 <button type="submit" class="btn btn-sm btn-dark fw-bold px-3">Guardar</button>
                                             </div>
                                             <input type="text" name="solucion" class="form-control form-control-sm" placeholder="Escribir solución aplicada..." value="<?= htmlspecialchars($tk['solucion'] ?? '') ?>">
+                                        </form>
+                                        <form method="POST" onsubmit="return confirm('¿Eliminar permanentemente este reporte de avería del Hub y de la plataforma?');">
+                                            <input type="hidden" name="hub_action" value="delete_ticket">
+                                            <input type="hidden" name="hub_id" value="<?= htmlspecialchars($tk['hub_id'] ?? '') ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill w-100 py-0" style="font-size:0.75rem;">
+                                                <i class="bi bi-trash3 me-1"></i>Borrar Reporte (Prueba / Falso)
+                                            </button>
                                         </form>
                                     </td>
                                 </tr>
@@ -1191,7 +1255,7 @@ foreach ($tree as $mKey => $mMeta) {
                                                 <?php endif; ?>
                                             </td>
                                             <td class="pe-4">
-                                                <form method="POST" class="d-flex flex-column gap-1">
+                                                <form method="POST" class="d-flex flex-column gap-1 mb-1">
                                                     <input type="hidden" name="hub_action" value="update_ticket_status">
                                                     <input type="hidden" name="hub_id" value="<?= htmlspecialchars($tk['hub_id'] ?? '') ?>">
                                                     <select name="estado" class="form-select form-select-sm fw-bold <?= $est === 'solucionado' ? 'border-success text-success' : 'border-danger text-danger' ?>">
@@ -1201,6 +1265,13 @@ foreach ($tree as $mKey => $mMeta) {
                                                     </select>
                                                     <input type="text" name="solucion" class="form-control form-control-sm" placeholder="Nota de solución..." value="<?= htmlspecialchars($tk['solucion'] ?? '') ?>">
                                                     <button type="submit" class="btn btn-sm btn-dark rounded-pill">Actualizar</button>
+                                                </form>
+                                                <form method="POST" onsubmit="return confirm('¿Eliminar permanentemente este reporte de avería?');">
+                                                    <input type="hidden" name="hub_action" value="delete_ticket">
+                                                    <input type="hidden" name="hub_id" value="<?= htmlspecialchars($tk['hub_id'] ?? '') ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill w-100 py-0" style="font-size:0.75rem;">
+                                                        <i class="bi bi-trash3 me-1"></i>Borrar Reporte
+                                                    </button>
                                                 </form>
                                             </td>
                                         </tr>
