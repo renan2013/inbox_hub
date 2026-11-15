@@ -1,0 +1,4 @@
+# Ignorar datos dinámicos locales para que el Auto-Deploy de Hostinger (Git) nunca tenga conflictos al actualizar código
+storage/*.json
+.DS_Store
+Thumbs.db

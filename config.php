@@ -15,6 +15,7 @@ if (session_status() === PHP_SESSION_NONE) {
 define('HUB_VERSION', '2.5.0');
 define('HUB_DATA_DIR', __DIR__ . '/storage');
 define('HUB_CLIENTS_FILE', HUB_DATA_DIR . '/platforms.json');
+define('HUB_BACKUP_CLIENTS_FILE', dirname(__DIR__) . '/.inbox_hub_platforms_backup.json');
 define('HUB_CONFIG_FILE', HUB_DATA_DIR . '/hub_config.json');
 
 // Clave secreta HMAC compartida entre el Hub (renangalvan.net) y los conectores de las plataformas clientes
@@ -694,6 +695,16 @@ function get_registered_platforms(): array {
         }
     }
 
+    // Respaldo externo por si Hostinger limpia la carpeta en una reinstalación de Git
+    if (file_exists(HUB_BACKUP_CLIENTS_FILE)) {
+        $raw = @file_get_contents(HUB_BACKUP_CLIENTS_FILE);
+        $dec = $raw ? json_decode($raw, true) : null;
+        if (is_array($dec) && count($dec) > 0) {
+            @file_put_contents(HUB_CLIENTS_FILE, json_encode($dec, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            return $dec;
+        }
+    }
+
     // Semilla inicial con UNELA y CEFI listos
     $initial = [
         'unela' => [
@@ -736,7 +747,9 @@ function get_registered_platforms(): array {
  * Guarda todas las plataformas en el almacenamiento del Hub.
  */
 function save_registered_platforms(array $platforms): bool {
-    return @file_put_contents(HUB_CLIENTS_FILE, json_encode($platforms, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) !== false;
+    $json = json_encode($platforms, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    @file_put_contents(HUB_BACKUP_CLIENTS_FILE, $json);
+    return @file_put_contents(HUB_CLIENTS_FILE, $json) !== false;
 }
 
 /**
