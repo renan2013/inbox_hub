@@ -1,0 +1,84 @@
+{
+  "name": "Inbox Cloud Hub - Alerta de Averías a WhatsApp y Correo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "inbox-averias",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-averia-node",
+      "name": "Webhook Recepción Avería",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://tu-instancia-whatsapp-o-evolution-api/message/sendText/TU_INSTANCIA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "TU_API_KEY_WHATSAPP"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.body.admin_whatsapp }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.body.whatsapp_text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "whatsapp-send-node",
+      "name": "Enviar Alerta a mi WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [520, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "no-reply@renangalvan.net",
+        "toEmail": "={{ $json.body.admin_email }}",
+        "subject": "=🚨 [AVERÍA {{ $json.body.ticket.prioridad.toUpperCase() }}] {{ $json.body.ticket.client_siglas }}: {{ $json.body.ticket.titulo }}",
+        "html": "=<h2>🚨 Nueva Avería Reportada — {{ $json.body.ticket.client_nombre }}</h2><p><strong>Etiqueta:</strong> {{ $json.body.ticket.etiqueta }} | <strong>Prioridad:</strong> {{ $json.body.ticket.prioridad }}</p><p><strong>Usuario:</strong> {{ $json.body.ticket.usuario_nombre }} ({{ $json.body.ticket.usuario_email }})</p><p><strong>URL del fallo:</strong> <a href='{{ $json.body.ticket.url_origen }}'>{{ $json.body.ticket.url_origen }}</a></p><p><strong>Causa / Descripción:</strong><br>{{ $json.body.ticket.problema }}</p>{{ $json.body.ticket.evidencia_url ? '<p><strong>Evidencia Gráfica:</strong><br><a href=\"' + $json.body.ticket.evidencia_url + '\"><img src=\"' + $json.body.ticket.evidencia_url + '\" style=\"max-width:500px;border-radius:8px;\"></a></p>' : '' }}<p><a href='https://hub.renangalvan.net/?tab=averias'>👉 Abrir en Inbox Cloud Hub</a></p>",
+        "options": {}
+      },
+      "id": "email-send-node",
+      "name": "Enviar Copia a mi Correo",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [520, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Recepción Avería": {
+      "main": [
+        [
+          {
+            "node": "Enviar Alerta a mi WhatsApp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar Copia a mi Correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

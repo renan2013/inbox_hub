@@ -72,10 +72,64 @@ if (!isset($platforms[$selectedId])) {
 $flashSuccess = '';
 $flashWarning = '';
 $flashError   = '';
+$ticketState  = load_hub_tickets();
 
 // Procesar acciones del Hub autenticado
 if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['hub_action'] ?? '';
+
+    // A. Guardar configuración de alertas omnicanal (WhatsApp n8n + Email)
+    if ($action === 'save_ticket_settings') {
+        $ticketState['settings'] = [
+            'admin_email'     => trim($_POST['admin_email'] ?? 'renan@renangalvan.net'),
+            'admin_whatsapp'  => trim($_POST['admin_whatsapp'] ?? ''),
+            'n8n_webhook_url' => trim($_POST['n8n_webhook_url'] ?? ''),
+            'notify_email'    => !empty($_POST['notify_email']),
+            'notify_whatsapp' => !empty($_POST['notify_whatsapp']),
+        ];
+        save_hub_tickets($ticketState);
+        $flashSuccess = "<strong>¡Canales de Alerta Actualizados!</strong> Configuración de WhatsApp (n8n) y Correo guardada en el Hub.";
+    }
+
+    // B. Probar disparo de alerta a WhatsApp (n8n) y Correo
+    if ($action === 'test_ticket_alert') {
+        $sampleTicket = [
+            'id'             => 'TEST-' . rand(100, 999),
+            'client_id'      => $selectedId,
+            'client_siglas'  => $platforms[$selectedId]['siglas'] ?? 'CEFI',
+            'client_nombre'  => $platforms[$selectedId]['nombre'] ?? 'Plataforma Inbox',
+            'titulo'         => 'Prueba de Alerta Omnicanal desde Inbox Cloud Hub',
+            'etiqueta'       => '🔴 Error Crítico / Prueba',
+            'prioridad'      => 'urgente',
+            'problema'       => 'Este es un mensaje de prueba para verificar la recepción instantánea en WhatsApp (vía n8n) y Correo Electrónico.',
+            'url_origen'     => 'https://hub.renangalvan.net',
+            'evidencia_url'  => '',
+            'usuario_nombre' => 'Renan Galván (Fabricante)',
+            'usuario_email'  => $ticketState['settings']['admin_email'] ?? 'renan@renangalvan.net',
+            'usuario_rol'    => 'SuperAdmin',
+            'fecha_creacion' => date('Y-m-d H:i:s'),
+        ];
+        $resAlert = dispatch_hub_ticket_notifications($sampleTicket, $ticketState['settings']);
+        $flashSuccess = "<strong>Prueba de Alerta Disparada:</strong> WhatsApp n8n: " . ($resAlert['whatsapp_n8n'] ? '✅ Enviado' : '⚠️ Sin Webhook / No conectado') . " | Correo: " . ($resAlert['email'] ? '✅ Enviado' : '⚠️ Pendiente');
+    }
+
+    // C. Actualizar estado o solución de una avería en el Hub
+    if ($action === 'update_ticket_status') {
+        $hubId     = trim($_POST['hub_id'] ?? '');
+        $newStatus = trim($_POST['estado'] ?? 'solucionado');
+        $solucion  = trim($_POST['solucion'] ?? '');
+        foreach ($ticketState['tickets'] as &$tk) {
+            if (($tk['hub_id'] ?? '') === $hubId) {
+                $tk['estado']   = $newStatus;
+                $tk['solucion'] = $solucion;
+                $tk['fecha_solucion'] = date('Y-m-d H:i:s');
+                break;
+            }
+        }
+        unset($tk);
+        save_hub_tickets($ticketState);
+        $flashSuccess = "Estado de la avería <strong>" . htmlspecialchars($hubId) . "</strong> actualizado a <strong>" . strtoupper(htmlspecialchars($newStatus)) . "</strong>.";
+    }
 
     // 0. Escanear en vivo nuevos menús / sub-ítems creados en el código de la plataforma cliente
     if ($action === 'discover_tree') {
@@ -439,7 +493,19 @@ foreach ($tree as $mKey => $mMeta) {
         </span>
     </div>
     <?php if ($isAuthenticated): ?>
+    <?php
+        $openTicketsCount = 0;
+        foreach ($ticketState['tickets'] ?? [] as $tkItem) {
+            if (($tkItem['estado'] ?? 'reportado') !== 'solucionado') {
+                $openTicketsCount++;
+            }
+        }
+    ?>
     <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm <?= $openTicketsCount > 0 ? 'btn-danger' : 'btn-outline-warning' ?> rounded-pill px-3 fw-bold position-relative" data-bs-toggle="modal" data-bs-target="#modalCentroAverias">
+            <i class="bi bi-exclamation-octagon-fill me-1"></i>Centro de Averías
+            <span class="badge bg-light text-dark rounded-pill ms-1"><?= $openTicketsCount ?></span>
+        </button>
         <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#modalPlatformMeta" onclick="openNewPlatformModal()">
             <i class="bi bi-plus-circle me-1"></i>Añadir Plataforma / Cliente
         </button>
@@ -871,8 +937,167 @@ foreach ($tree as $mKey => $mMeta) {
 
 <?php endif; ?>
 
+<?php if ($isAuthenticated): ?>
+<!-- MODAL: CENTRO GLOBAL DE AVERÍAS MULTI-PLATAFORMA + CONFIGURACIÓN OMNICANAL (WHATSAPP n8n & EMAIL) -->
+<div class="modal fade" id="modalCentroAverias" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header text-white border-0 py-3 px-4" style="background: linear-gradient(135deg, #0f172a 0%, #7f1d1d 100%);">
+                <div>
+                    <h5 class="modal-title fw-bold mb-0">
+                        <i class="bi bi-exclamation-octagon-fill text-warning me-2"></i>Centro Global de Averías &amp; Alertas Omnicanal (n8n WhatsApp + Correo)
+                    </h5>
+                    <small class="text-white-50">Recepción centralizada en tiempo real de reportes con Evidencia Gráfica desde todas las plataformas instaladas.</small>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4 bg-light">
+                <!-- 1. Configuración de Alertas Directas (WhatsApp vía n8n + Email) -->
+                <div class="card border-0 shadow-sm rounded-4 mb-4">
+                    <div class="card-body p-3">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold mb-0 text-dark">
+                                <i class="bi bi-whatsapp text-success me-1"></i>
+                                <i class="bi bi-envelope-at-fill text-primary me-1"></i>
+                                Canales de Notificación Instantánea al Creador
+                            </h6>
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="hub_action" value="test_ticket_alert">
+                                <button type="submit" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold">
+                                    <i class="bi bi-send-check me-1"></i>Probar Alerta WhatsApp / Correo
+                                </button>
+                            </form>
+                        </div>
+                        <form method="POST" class="row g-2 align-items-end">
+                            <input type="hidden" name="hub_action" value="save_ticket_settings">
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-secondary mb-1">Tu Correo de Soporte</label>
+                                <input type="email" name="admin_email" class="form-control form-control-sm" value="<?= htmlspecialchars($ticketState['settings']['admin_email'] ?? 'renan@renangalvan.net') ?>" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold text-secondary mb-1">Tu WhatsApp</label>
+                                <input type="text" name="admin_whatsapp" class="form-control form-control-sm" value="<?= htmlspecialchars($ticketState['settings']['admin_whatsapp'] ?? '+50688888888') ?>" placeholder="+506...">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold text-secondary mb-1">URL Webhook n8n (Flujo WhatsApp / Email)</label>
+                                <input type="url" name="n8n_webhook_url" class="form-control form-control-sm" value="<?= htmlspecialchars($ticketState['settings']['n8n_webhook_url'] ?? '') ?>" placeholder="https://tu-n8n.com/webhook/inbox-averias">
+                            </div>
+                            <div class="col-md-3 d-flex align-items-center justify-content-end gap-2">
+                                <div class="form-check form-switch me-1">
+                                    <input class="form-check-input" type="checkbox" name="notify_whatsapp" value="1" id="chkWa" <?= !empty($ticketState['settings']['notify_whatsapp']) ? 'checked' : '' ?>>
+                                    <label class="form-check-label small fw-semibold" for="chkWa">n8n</label>
+                                </div>
+                                <div class="form-check form-switch me-2">
+                                    <input class="form-check-input" type="checkbox" name="notify_email" value="1" id="chkEm" <?= !empty($ticketState['settings']['notify_email']) ? 'checked' : '' ?>>
+                                    <label class="form-check-label small fw-semibold" for="chkEm">Email</label>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3 fw-bold">
+                                    <i class="bi bi-save me-1"></i>Guardar
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 2. Listado Global de Averías Reportadas -->
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center">
+                        <h6 class="fw-bold mb-0"><i class="bi bi-list-ul text-danger me-2"></i>Bandeja Unificada de Averías Reportadas</h6>
+                        <span class="badge bg-dark rounded-pill"><?= count($ticketState['tickets'] ?? []) ?> reportes totales</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light small text-uppercase">
+                                <tr>
+                                    <th class="ps-4">Ticket / Plataforma</th>
+                                    <th>Etiqueta &amp; Prioridad</th>
+                                    <th>Problema &amp; URL Origen</th>
+                                    <th>Evidencia Gráfica</th>
+                                    <th>Estado / Gestión</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($ticketState['tickets'])): ?>
+                                    <tr>
+                                        <td colspan="5" class="text-center py-5 text-muted">
+                                            <i class="bi bi-shield-check fs-1 text-success d-block mb-2"></i>
+                                            No hay averías reportadas en este momento. Todas las plataformas operan con normalidad.
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($ticketState['tickets'] as $tk): ?>
+                                        <?php
+                                            $prio = strtolower($tk['prioridad'] ?? 'alta');
+                                            $prioBadge = $prio === 'urgente' ? 'bg-danger' : ($prio === 'alta' ? 'bg-warning text-dark' : 'bg-info text-dark');
+                                            $est = $tk['estado'] ?? 'reportado';
+                                        ?>
+                                        <tr>
+                                            <td class="ps-4">
+                                                <div class="fw-bold text-dark"><?= htmlspecialchars($tk['hub_id'] ?? ('#' . ($tk['id'] ?? ''))) ?></div>
+                                                <span class="badge bg-primary rounded-pill"><?= htmlspecialchars($tk['client_siglas'] ?? $tk['client_id'] ?? 'INBOX') ?></span>
+                                                <div class="small text-muted mt-1"><?= htmlspecialchars($tk['fecha_creacion'] ?? '') ?></div>
+                                                <div class="small text-secondary"><i class="bi bi-person me-1"></i><?= htmlspecialchars($tk['usuario_nombre'] ?? '') ?></div>
+                                            </td>
+                                            <td>
+                                                <div class="fw-semibold text-dark small mb-1"><?= htmlspecialchars($tk['etiqueta'] ?? 'General') ?></div>
+                                                <span class="badge <?= $prioBadge ?> rounded-pill text-uppercase" style="font-size:0.68rem;"><?= htmlspecialchars($prio) ?></span>
+                                            </td>
+                                            <td style="max-width: 340px;">
+                                                <div class="fw-bold text-dark"><?= htmlspecialchars($tk['titulo'] ?? '') ?></div>
+                                                <div class="small text-secondary text-wrap"><?= nl2br(htmlspecialchars($tk['problema'] ?? '')) ?></div>
+                                                <?php if (!empty($tk['url_origen'])): ?>
+                                                    <div class="mt-1">
+                                                        <a href="<?= htmlspecialchars($tk['url_origen']) ?>" target="_blank" class="small text-primary text-decoration-none">
+                                                            <i class="bi bi-link-45deg"></i><?= htmlspecialchars($tk['url_origen']) ?>
+                                                        </a>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php if (!empty($tk['evidencia_url'])): ?>
+                                                    <a href="<?= htmlspecialchars($tk['evidencia_url']) ?>" target="_blank" class="d-inline-block text-decoration-none">
+                                                        <img src="<?= htmlspecialchars($tk['evidencia_url']) ?>" alt="Evidencia" style="width:76px;height:52px;object-fit:cover;border-radius:8px;border:2px solid #0ea5e9;" class="shadow-sm">
+                                                        <div class="small text-info fw-bold mt-1"><i class="bi bi-zoom-in me-1"></i>Ver Captura</div>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="text-muted small"><i class="bi bi-image me-1"></i>Sin captura</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="pe-4">
+                                                <form method="POST" class="d-flex flex-column gap-1">
+                                                    <input type="hidden" name="hub_action" value="update_ticket_status">
+                                                    <input type="hidden" name="hub_id" value="<?= htmlspecialchars($tk['hub_id'] ?? '') ?>">
+                                                    <select name="estado" class="form-select form-select-sm fw-bold <?= $est === 'solucionado' ? 'border-success text-success' : 'border-danger text-danger' ?>">
+                                                        <option value="reportado" <?= $est === 'reportado' ? 'selected' : '' ?>>🔴 Reportado</option>
+                                                        <option value="en_revision" <?= $est === 'en_revision' ? 'selected' : '' ?>>🟠 En Revisión</option>
+                                                        <option value="solucionado" <?= $est === 'solucionado' ? 'selected' : '' ?>>🟢 Solucionado</option>
+                                                    </select>
+                                                    <input type="text" name="solucion" class="form-control form-control-sm" placeholder="Nota de solución..." value="<?= htmlspecialchars($tk['solucion'] ?? '') ?>">
+                                                    <button type="submit" class="btn btn-sm btn-dark rounded-pill">Actualizar</button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'averias' || params.get('tab') === 'tickets') {
+        const el = document.getElementById('modalCentroAverias');
+        if (el) new bootstrap.Modal(el).show();
+    }
+});
 function updateTreeVisualState() {
     let activeMenus = 0;
     let activeItems = 0;

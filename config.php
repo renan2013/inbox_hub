@@ -924,3 +924,155 @@ function get_effective_menu_tree(array $platform, int &$autoDiscoveredCount = 0)
 
     return $tree;
 }
+
+// ============================================================================
+// CENTRO GLOBAL DE AVERÍAS & NOTIFICACIONES OMNICANAL (WHATSAPP n8n + EMAIL)
+// ============================================================================
+define('INBOX_HUB_TICKETS_FILE', INBOX_HUB_STORAGE_DIR . '/tickets_state.json');
+define('INBOX_HUB_TICKETS_BACKUP', rtrim(sys_get_temp_dir(), '/\\') . '/inbox_hub_tickets_' . substr(md5(__DIR__), 0, 10) . '.json');
+
+function load_hub_tickets(): array {
+    $sourceFile = null;
+    if (file_exists(INBOX_HUB_TICKETS_FILE)) {
+        $sourceFile = INBOX_HUB_TICKETS_FILE;
+    } elseif (file_exists(INBOX_HUB_TICKETS_BACKUP)) {
+        $sourceFile = INBOX_HUB_TICKETS_BACKUP;
+    }
+
+    if ($sourceFile !== null) {
+        $decoded = json_decode((string)@file_get_contents($sourceFile), true);
+        if (is_array($decoded)) {
+            if (!isset($decoded['settings'])) {
+                $decoded['settings'] = get_default_ticket_settings();
+            }
+            if (!isset($decoded['tickets']) || !is_array($decoded['tickets'])) {
+                $decoded['tickets'] = [];
+            }
+            return $decoded;
+        }
+    }
+
+    return [
+        'settings' => get_default_ticket_settings(),
+        'tickets'  => [],
+    ];
+}
+
+function get_default_ticket_settings(): array {
+    return [
+        'admin_email'      => 'renan@renangalvan.net',
+        'admin_whatsapp'   => '+50688888888',
+        'n8n_webhook_url'  => '',
+        'notify_email'     => true,
+        'notify_whatsapp'  => true,
+    ];
+}
+
+function save_hub_tickets(array $data): bool {
+    $data['updated_at'] = date('Y-m-d H:i:s');
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $ok = @file_put_contents(INBOX_HUB_TICKETS_FILE, $json) !== false;
+    @file_put_contents(INBOX_HUB_TICKETS_BACKUP, $json);
+    return $ok;
+}
+
+/**
+ * Dispara alerta de nueva avería hacia Webhook n8n (WhatsApp) y Correo Electrónico del Fabricante.
+ */
+function dispatch_hub_ticket_notifications(array $ticket, array $settings): array {
+    $results = ['whatsapp_n8n' => false, 'email' => false];
+
+    $whatsappText = "🚨 *NUEVA AVERÍA REPORTADA — " . strtoupper($ticket['client_siglas'] ?? $ticket['client_id'] ?? 'INBOX') . "*\n"
+        . "━━━━━━━━━━━━━━━━━━━━\n"
+        . "🆔 *Ticket:* #" . ($ticket['id'] ?? 'N/A') . "\n"
+        . "🏷️ *Etiqueta:* " . ($ticket['etiqueta'] ?? 'General') . "\n"
+        . "⚡ *Prioridad:* " . strtoupper($ticket['prioridad'] ?? 'Alta') . "\n"
+        . "👤 *Reportado por:* " . ($ticket['usuario_nombre'] ?? 'Usuario') . " (" . ($ticket['usuario_rol'] ?? '') . ")\n"
+        . "📌 *Asunto:* " . ($ticket['titulo'] ?? '') . "\n"
+        . "📝 *Causa / Detalle:* " . ($ticket['problema'] ?? '') . "\n"
+        . "🔗 *Pantalla origen:* " . ($ticket['url_origen'] ?? 'N/A') . "\n"
+        . (!empty($ticket['evidencia_url']) ? "🖼️ *Evidencia Gráfica:* " . $ticket['evidencia_url'] . "\n" : "")
+        . "━━━━━━━━━━━━━━━━━━━━\n"
+        . "🛠️ *Gestionar en Hub:* https://hub.renangalvan.net/?tab=averias";
+
+    // 1. Disparo hacia Webhook n8n (para WhatsApp + automatizaciones)
+    $webhookUrl = trim($settings['n8n_webhook_url'] ?? '');
+    if (!empty($settings['notify_whatsapp']) && !empty($webhookUrl)) {
+        $payload = json_encode([
+            'event'           => 'nueva_averia_sistema',
+            'timestamp'       => date('c'),
+            'admin_whatsapp'  => $settings['admin_whatsapp'] ?? '',
+            'admin_email'     => $settings['admin_email'] ?? '',
+            'whatsapp_text'   => $whatsappText,
+            'ticket'          => $ticket,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $ch = curl_init($webhookUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $results['whatsapp_n8n'] = ($resp !== false && $code >= 200 && $code < 300);
+    }
+
+    // 2. Disparo por Correo Electrónico HTML con Evidencia Gráfica incrustada
+    $adminEmail = trim($settings['admin_email'] ?? '');
+    if (!empty($settings['notify_email']) && !empty($adminEmail) && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+        $subject = "🚨 [AVERÍA " . strtoupper($ticket['prioridad'] ?? 'ALTA') . "] " . ($ticket['client_siglas'] ?? 'INBOX') . ": " . ($ticket['titulo'] ?? 'Reporte de Sistema');
+        $evidenciaHtml = '';
+        if (!empty($ticket['evidencia_url'])) {
+            $evUrl = htmlspecialchars($ticket['evidencia_url']);
+            $evidenciaHtml = "
+                <div style='margin-top:16px;padding:14px;background:#0f172a;border-radius:10px;border:1px solid #334155;'>
+                    <div style='font-weight:bold;color:#38bdf8;margin-bottom:8px;'>📸 Evidencia Gráfica Adjunta:</div>
+                    <a href='{$evUrl}' target='_blank' style='color:#10b981;font-weight:bold;'>Ver imagen en tamaño completo &rarr;</a>
+                    <div style='margin-top:10px;'>
+                        <img src='{$evUrl}' alt='Evidencia Gráfica' style='max-width:100%;max-height:420px;border-radius:8px;border:1px solid #475569;'>
+                    </div>
+                </div>";
+        }
+
+        $htmlBody = "
+        <div style='font-family:Arial,sans-serif;max-width:640px;margin:0 auto;background:#1e293b;color:#f8fafc;border-radius:14px;overflow:hidden;border:1px solid #334155;'>
+            <div style='background:linear-gradient(90deg,#dc2626,#ea580c);padding:18px 24px;color:#fff;'>
+                <h2 style='margin:0;font-size:18px;'>🚨 Nueva Avería Reportada — " . htmlspecialchars($ticket['client_nombre'] ?? $ticket['client_id'] ?? 'Plataforma Inbox') . "</h2>
+                <p style='margin:4px 0 0;font-size:12px;opacity:0.9;'>Ticket #" . htmlspecialchars($ticket['id'] ?? '') . " • " . htmlspecialchars($ticket['fecha_creacion'] ?? date('Y-m-d H:i:s')) . "</p>
+            </div>
+            <div style='padding:24px;'>
+                <table style='width:100%;border-collapse:collapse;font-size:14px;'>
+                    <tr><td style='padding:6px 0;color:#94a3b8;width:140px;'><strong>Etiqueta / Causa:</strong></td><td style='padding:6px 0;color:#f8fafc;'><strong>" . htmlspecialchars($ticket['etiqueta'] ?? 'General') . "</strong></td></tr>
+                    <tr><td style='padding:6px 0;color:#94a3b8;'><strong>Prioridad:</strong></td><td style='padding:6px 0;color:#f87171;font-weight:bold;'>" . strtoupper(htmlspecialchars($ticket['prioridad'] ?? 'Alta')) . "</td></tr>
+                    <tr><td style='padding:6px 0;color:#94a3b8;'><strong>Reportado por:</strong></td><td style='padding:6px 0;color:#f8fafc;'>" . htmlspecialchars(($ticket['usuario_nombre'] ?? '') . ' (' . ($ticket['usuario_email'] ?? '') . ')') . "</td></tr>
+                    <tr><td style='padding:6px 0;color:#94a3b8;'><strong>URL del Fallo:</strong></td><td style='padding:6px 0;'><a href='" . htmlspecialchars($ticket['url_origen'] ?? '#') . "' style='color:#38bdf8;'>" . htmlspecialchars($ticket['url_origen'] ?? 'N/A') . "</a></td></tr>
+                </table>
+                <div style='margin-top:16px;padding:14px;background:#0f172a;border-radius:10px;border-left:4px solid #f59e0b;'>
+                    <div style='font-weight:bold;color:#fbbf24;margin-bottom:6px;'>" . htmlspecialchars($ticket['titulo'] ?? '') . "</div>
+                    <div style='color:#e2e8f0;white-space:pre-line;font-size:14px;'>" . htmlspecialchars($ticket['problema'] ?? '') . "</div>
+                </div>
+                {$evidenciaHtml}
+                <div style='margin-top:22px;text-align:center;'>
+                    <a href='https://hub.renangalvan.net/?tab=averias' style='display:inline-block;background:#10b981;color:#0f172a;font-weight:bold;text-decoration:none;padding:12px 24px;border-radius:999px;'>Atender y Resolver en Inbox Cloud Hub</a>
+                </div>
+            </div>
+        </div>";
+
+        $headers  = "MIME-Version: 1.0\r\n";
+        $headers .= "Content-type: text/html; charset=UTF-8\r\n";
+        $headers .= "From: Inbox Cloud Hub <no-reply@renangalvan.net>\r\n";
+        if (!empty($ticket['usuario_email']) && filter_var($ticket['usuario_email'], FILTER_VALIDATE_EMAIL)) {
+            $headers .= "Reply-To: " . $ticket['usuario_email'] . "\r\n";
+        }
+
+        $results['email'] = @mail($adminEmail, '=?UTF-8?B?' . base64_encode($subject) . '?=', $htmlBody, $headers);
+    }
+
+    return $results;
+}
