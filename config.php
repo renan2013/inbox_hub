@@ -930,8 +930,8 @@ function get_effective_menu_tree(array $platform, int &$autoDiscoveredCount = 0)
 // ============================================================================
 // Correo Interno Fijo del Creador y Proveedor del Ecosistema Inbox
 define('INBOX_CREATOR_EMAIL', 'renangalvan@gmail.com');
-define('INBOX_HUB_TICKETS_FILE', INBOX_HUB_STORAGE_DIR . '/tickets_state.json');
-define('INBOX_HUB_TICKETS_BACKUP', rtrim(sys_get_temp_dir(), '/\\') . '/inbox_hub_tickets_' . substr(md5(__DIR__), 0, 10) . '.json');
+define('INBOX_HUB_TICKETS_FILE', HUB_DATA_DIR . '/tickets_state.json');
+define('INBOX_HUB_TICKETS_BACKUP', dirname(__DIR__) . '/.inbox_hub_tickets_backup.json');
 
 function load_hub_tickets(): array {
     $sourceFile = null;
