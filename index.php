@@ -78,17 +78,17 @@ $ticketState  = load_hub_tickets();
 if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['hub_action'] ?? '';
 
-    // A. Guardar configuración de alertas omnicanal (WhatsApp n8n + Email)
+    // A. Guardar configuración de alertas omnicanal (WhatsApp n8n + Email fijo interno a renangalvan@gmail.com)
     if ($action === 'save_ticket_settings') {
         $ticketState['settings'] = [
-            'admin_email'     => trim($_POST['admin_email'] ?? 'renan@renangalvan.net'),
+            'admin_email'     => INBOX_CREATOR_EMAIL,
             'admin_whatsapp'  => trim($_POST['admin_whatsapp'] ?? ''),
             'n8n_webhook_url' => trim($_POST['n8n_webhook_url'] ?? ''),
             'notify_email'    => !empty($_POST['notify_email']),
             'notify_whatsapp' => !empty($_POST['notify_whatsapp']),
         ];
         save_hub_tickets($ticketState);
-        $flashSuccess = "<strong>¡Canales de Alerta Actualizados!</strong> Configuración de WhatsApp (n8n) y Correo guardada en el Hub.";
+        $flashSuccess = "<strong>¡Canales de Alerta Actualizados!</strong> Configuración de WhatsApp (n8n) guardada. El correo del proveedor está fijado internamente a <code>" . INBOX_CREATOR_EMAIL . "</code>.";
     }
 
     // B. Probar disparo de alerta a WhatsApp (n8n) y Correo
@@ -971,8 +971,10 @@ foreach ($tree as $mKey => $mMeta) {
                         <form method="POST" class="row g-2 align-items-end">
                             <input type="hidden" name="hub_action" value="save_ticket_settings">
                             <div class="col-md-3">
-                                <label class="form-label small fw-bold text-secondary mb-1">Tu Correo de Soporte</label>
-                                <input type="email" name="admin_email" class="form-control form-control-sm" value="<?= htmlspecialchars($ticketState['settings']['admin_email'] ?? 'renan@renangalvan.net') ?>" required>
+                                <label class="form-label small fw-bold text-secondary mb-1">
+                                    <i class="bi bi-lock-fill text-success me-1"></i>Correo Interno del Proveedor (Fijo)
+                                </label>
+                                <input type="email" class="form-control form-control-sm bg-light fw-bold text-success" value="<?= htmlspecialchars(INBOX_CREATOR_EMAIL) ?>" readonly title="Definido internamente en el núcleo del sistema">
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label small fw-bold text-secondary mb-1">Tu WhatsApp</label>

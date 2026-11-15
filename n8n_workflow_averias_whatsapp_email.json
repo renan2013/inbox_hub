@@ -51,7 +51,7 @@
     {
       "parameters": {
         "fromEmail": "no-reply@renangalvan.net",
-        "toEmail": "={{ $json.body.admin_email }}",
+        "toEmail": "renangalvan@gmail.com",
         "subject": "=🚨 [AVERÍA {{ $json.body.ticket.prioridad.toUpperCase() }}] {{ $json.body.ticket.client_siglas }}: {{ $json.body.ticket.titulo }}",
         "html": "=<h2>🚨 Nueva Avería Reportada — {{ $json.body.ticket.client_nombre }}</h2><p><strong>Etiqueta:</strong> {{ $json.body.ticket.etiqueta }} | <strong>Prioridad:</strong> {{ $json.body.ticket.prioridad }}</p><p><strong>Usuario:</strong> {{ $json.body.ticket.usuario_nombre }} ({{ $json.body.ticket.usuario_email }})</p><p><strong>URL del fallo:</strong> <a href='{{ $json.body.ticket.url_origen }}'>{{ $json.body.ticket.url_origen }}</a></p><p><strong>Causa / Descripción:</strong><br>{{ $json.body.ticket.problema }}</p>{{ $json.body.ticket.evidencia_url ? '<p><strong>Evidencia Gráfica:</strong><br><a href=\"' + $json.body.ticket.evidencia_url + '\"><img src=\"' + $json.body.ticket.evidencia_url + '\" style=\"max-width:500px;border-radius:8px;\"></a></p>' : '' }}<p><a href='https://hub.renangalvan.net/?tab=averias'>👉 Abrir en Inbox Cloud Hub</a></p>",
         "options": {}

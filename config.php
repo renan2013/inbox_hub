@@ -928,6 +928,8 @@ function get_effective_menu_tree(array $platform, int &$autoDiscoveredCount = 0)
 // ============================================================================
 // CENTRO GLOBAL DE AVERÍAS & NOTIFICACIONES OMNICANAL (WHATSAPP n8n + EMAIL)
 // ============================================================================
+// Correo Interno Fijo del Creador y Proveedor del Ecosistema Inbox
+define('INBOX_CREATOR_EMAIL', 'renangalvan@gmail.com');
 define('INBOX_HUB_TICKETS_FILE', INBOX_HUB_STORAGE_DIR . '/tickets_state.json');
 define('INBOX_HUB_TICKETS_BACKUP', rtrim(sys_get_temp_dir(), '/\\') . '/inbox_hub_tickets_' . substr(md5(__DIR__), 0, 10) . '.json');
 
@@ -945,6 +947,7 @@ function load_hub_tickets(): array {
             if (!isset($decoded['settings'])) {
                 $decoded['settings'] = get_default_ticket_settings();
             }
+            $decoded['settings']['admin_email'] = INBOX_CREATOR_EMAIL;
             if (!isset($decoded['tickets']) || !is_array($decoded['tickets'])) {
                 $decoded['tickets'] = [];
             }
@@ -960,7 +963,7 @@ function load_hub_tickets(): array {
 
 function get_default_ticket_settings(): array {
     return [
-        'admin_email'      => 'renan@renangalvan.net',
+        'admin_email'      => INBOX_CREATOR_EMAIL,
         'admin_whatsapp'   => '+50688888888',
         'n8n_webhook_url'  => '',
         'notify_email'     => true,
@@ -1023,9 +1026,9 @@ function dispatch_hub_ticket_notifications(array $ticket, array $settings): arra
         $results['whatsapp_n8n'] = ($resp !== false && $code >= 200 && $code < 300);
     }
 
-    // 2. Disparo por Correo Electrónico HTML con Evidencia Gráfica incrustada
-    $adminEmail = trim($settings['admin_email'] ?? '');
-    if (!empty($settings['notify_email']) && !empty($adminEmail) && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+    // 2. Disparo por Correo Electrónico HTML con Evidencia Gráfica incrustada (Siempre fijo a INBOX_CREATOR_EMAIL)
+    $adminEmail = INBOX_CREATOR_EMAIL;
+    if (!empty($settings['notify_email']) && filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
         $subject = "🚨 [AVERÍA " . strtoupper($ticket['prioridad'] ?? 'ALTA') . "] " . ($ticket['client_siglas'] ?? 'INBOX') . ": " . ($ticket['titulo'] ?? 'Reporte de Sistema');
         $evidenciaHtml = '';
         if (!empty($ticket['evidencia_url'])) {
