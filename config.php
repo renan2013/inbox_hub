@@ -60,41 +60,29 @@ function get_master_menu_tree(): array {
     return [
         'dashboard' => [
             'key'         => 'dashboard',
-            'nombre'      => 'Dashboard Principal',
+            'nombre'      => 'Dashboard Principal & Tareas',
             'icono'       => 'bi-speedometer2',
             'color'       => 'primary',
             'categoria'   => 'Núcleo',
-            'descripcion' => 'Panel principal de métricas, KPIs de tareas, filtros y tablero Kanban.',
+            'descripcion' => 'Panel principal de métricas, vistas de tareas (Tabla, Tablero Kanban, Cronograma Gantt), plantillas y etiquetas.',
             'default'     => true,
             'children'    => [
                 'item.dashboard_link' => [
-                    'nombre'  => 'Enlace Dashboard en Barra Superior',
+                    'nombre'  => 'Enlace Dashboard en Barra Superior (Tabla y Tablero)',
                     'icono'   => 'bi-speedometer2 text-primary',
                     'ruta'    => '/dashboard',
+                    'default' => true,
+                ],
+                'item.gantt_tareas' => [
+                    'nombre'  => 'Vista Cronograma / Diagrama de Gantt en Dashboard',
+                    'icono'   => 'bi-bar-chart-steps text-info',
+                    'ruta'    => '/tareas/gantt',
                     'default' => true,
                 ],
                 'item.averias_alerta' => [
                     'nombre'  => 'Alerta Luminosa de Averías Pendientes (Bombillo)',
                     'icono'   => 'bi-lightbulb-fill text-warning',
                     'ruta'    => '/soporte',
-                    'default' => true,
-                ],
-            ],
-        ],
-
-        'tareas_gantt' => [
-            'key'         => 'tareas_gantt',
-            'nombre'      => 'Gantt Tareas',
-            'icono'       => 'bi-bar-chart-steps',
-            'color'       => 'info',
-            'categoria'   => 'Núcleo',
-            'descripcion' => 'Cronograma visual de tareas colaborativas, plantillas y diagrama de Gantt.',
-            'default'     => true,
-            'children'    => [
-                'item.gantt_tareas' => [
-                    'nombre'  => 'Vista General Gantt Tareas',
-                    'icono'   => 'bi-bar-chart-steps text-info',
-                    'ruta'    => '/cursos/gantt_tareas.php',
                     'default' => true,
                 ],
             ],
