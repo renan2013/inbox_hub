@@ -37,7 +37,12 @@ $isAuthenticated = !empty($_SESSION['inbox_hub_authenticated']);
 
 // Cargar plataformas y árbol maestro
 $platforms = get_registered_platforms();
-$tree = get_master_menu_tree();
+$selectedId = strtolower(trim($_GET['client'] ?? $_POST['client_id'] ?? array_key_first($platforms)));
+if (!isset($platforms[$selectedId])) {
+    $selectedId = array_key_first($platforms);
+}
+$autoCount = 0;
+$tree = get_effective_menu_tree($platforms[$selectedId], $autoCount);
 
 // Exportar JSON de una plataforma
 if ($isAuthenticated && isset($_GET['export_client'])) {
@@ -71,6 +76,22 @@ $flashError   = '';
 // Procesar acciones del Hub autenticado
 if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['hub_action'] ?? '';
+
+    // 0. Escanear en vivo nuevos menús / sub-ítems creados en el código de la plataforma cliente
+    if ($action === 'discover_tree') {
+        $cid = strtolower(trim($_POST['client_id'] ?? $selectedId));
+        if (isset($platforms[$cid])) {
+            $selectedId = $cid;
+            $discRes = discover_tree_from_platform($platforms[$cid]);
+            save_registered_platforms($platforms);
+            $tree = get_effective_menu_tree($platforms[$cid], $autoCount);
+            if ($discRes['success']) {
+                $flashSuccess = "<strong>¡Auto-Descubrimiento Completado!</strong> " . htmlspecialchars($discRes['message']);
+            } else {
+                $flashWarning = htmlspecialchars($discRes['message']);
+            }
+        }
+    }
 
     // 1. Crear o editar plataforma cliente
     if ($action === 'save_platform_meta') {
@@ -154,6 +175,7 @@ if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'save_and_sync') {
                 $syncRes = push_license_to_platform($platforms[$cid]);
                 save_registered_platforms($platforms);
+                $tree = get_effective_menu_tree($platforms[$cid], $autoCount);
 
                 if ($syncRes['success']) {
                     $flashSuccess = "<strong>¡Sincronización Remota Exitosa!</strong> " . htmlspecialchars($syncRes['message']);
@@ -579,6 +601,11 @@ foreach ($tree as $mKey => $mMeta) {
                 </div>
 
                 <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="submit" class="btn btn-sm btn-warning fw-bold rounded-pill px-3 shadow-sm"
+                            onclick="document.getElementById('hubActionInput').value='discover_tree';"
+                            title="Escanea en vivo navbar.php / app.blade.php del cliente y agrega automáticamente cualquier menú nuevo">
+                        <i class="bi bi-arrow-repeat me-1"></i>Detectar Nuevos Menús
+                    </button>
                     <a href="<?= htmlspecialchars($currentPlatform['url'] ?? '#') ?>" target="_blank" class="btn btn-sm btn-light fw-bold rounded-pill px-3">
                         <i class="bi bi-box-arrow-up-right me-1"></i>Abrir <?= htmlspecialchars($currentPlatform['siglas']) ?>
                     </a>

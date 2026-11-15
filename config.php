@@ -807,6 +807,9 @@ function push_license_to_platform(array &$platform): array {
 
     $decoded = json_decode($responseBody, true);
     if ($httpCode >= 200 && $httpCode < 300 && is_array($decoded) && !empty($decoded['success'])) {
+        if (!empty($decoded['discovered_tree']) && is_array($decoded['discovered_tree'])) {
+            $platform['discovered_tree'] = $decoded['discovered_tree'];
+        }
         $msg = $decoded['message'] ?? 'Sincronizado correctamente en el servidor remoto.';
         $platform['ultimo_resultado'] = ['ok' => true, 'msg' => $msg, 'code' => $httpCode];
         return ['success' => true, 'message' => $msg, 'remote' => $decoded];
@@ -817,4 +820,119 @@ function push_license_to_platform(array &$platform): array {
         : ('HTTP ' . $httpCode . ': ' . mb_substr(strip_tags((string)$responseBody), 0, 140));
     $platform['ultimo_resultado'] = ['ok' => false, 'msg' => $errDetail, 'code' => $httpCode];
     return ['success' => false, 'message' => $errDetail];
+}
+
+/**
+ * Consulta en vivo la plataforma remota para auto-descubrir nuevos menús o sub-ítems
+ * que se hayan creado en su navbar.php / app.blade.php.
+ */
+function discover_tree_from_platform(array &$platform): array {
+    $endpoint = trim($platform['sync_endpoint'] ?? '');
+    if (empty($endpoint)) {
+        return ['success' => false, 'message' => 'No hay endpoint configurado.'];
+    }
+
+    $payloadData = [
+        'action'    => 'discover_tree',
+        'client_id' => $platform['id'],
+        'timestamp' => time(),
+    ];
+    $jsonPayload = json_encode($payloadData, JSON_UNESCAPED_UNICODE);
+    $signature = hash_hmac('sha256', $jsonPayload, INBOX_HUB_MASTER_SECRET);
+
+    $ch = curl_init($endpoint);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $jsonPayload,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'X-Inbox-Hub-Signature: ' . $signature,
+            'X-Inbox-Client-Id: ' . $platform['id'],
+        ],
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+    ]);
+
+    $responseBody = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $decoded = $responseBody ? json_decode($responseBody, true) : null;
+    if ($httpCode >= 200 && $httpCode < 300 && is_array($decoded) && !empty($decoded['discovered_tree'])) {
+        $platform['discovered_tree'] = $decoded['discovered_tree'];
+        $newItemsCount = 0;
+        $merged = get_effective_menu_tree($platform, $newItemsCount);
+        foreach ($merged as $mKey => $mMeta) {
+            if (!array_key_exists($mKey, $platform['flags'])) {
+                $platform['flags'][$mKey] = true;
+            }
+            foreach ($mMeta['children'] ?? [] as $cKey => $cMeta) {
+                if (!array_key_exists($cKey, $platform['flags'])) {
+                    $platform['flags'][$cKey] = true;
+                }
+            }
+        }
+        return [
+            'success'   => true,
+            'message'   => "Escaneo en vivo completado ({$newItemsCount} ítems auto-detectados desde el código de {$platform['siglas']}).",
+            'new_items' => $newItemsCount,
+        ];
+    }
+
+    return ['success' => false, 'message' => 'No se pudo escanear el árbol remoto (HTTP ' . $httpCode . ').'];
+}
+
+/**
+ * Combina el Árbol Maestro Universal con cualquier menú o sub-ítem nuevo
+ * auto-descubierto desde el código de la plataforma cliente.
+ */
+function get_effective_menu_tree(array $platform, int &$autoDiscoveredCount = 0): array {
+    $tree = get_master_menu_tree();
+    $autoDiscoveredCount = 0;
+
+    if (empty($platform['discovered_tree']) || !is_array($platform['discovered_tree'])) {
+        return $tree;
+    }
+
+    // Indexar nombres de sub-ítems ya existentes en cada menú para evitar duplicados visuales
+    foreach ($platform['discovered_tree'] as $mKey => $mMeta) {
+        if (!isset($tree[$mKey])) {
+            $tree[$mKey] = [
+                'key'         => $mKey,
+                'nombre'      => $mMeta['nombre'] ?? ucfirst($mKey),
+                'icono'       => $mMeta['icono'] ?? 'bi-grid-fill',
+                'color'       => $mMeta['color'] ?? 'primary',
+                'categoria'   => 'Auto-Detectado',
+                'descripcion' => $mMeta['descripcion'] ?? 'Menú detectado automáticamente desde la plataforma.',
+                'default'     => true,
+                'children'    => [],
+            ];
+            $autoDiscoveredCount++;
+        }
+
+        $existingLabels = [];
+        foreach ($tree[$mKey]['children'] ?? [] as $existingKey => $existingChild) {
+            $existingLabels[mb_strtolower(trim($existingChild['nombre'] ?? ''), 'UTF-8')] = $existingKey;
+        }
+
+        foreach ($mMeta['children'] ?? [] as $cKey => $cMeta) {
+            $cLabelNorm = mb_strtolower(trim($cMeta['nombre'] ?? ''), 'UTF-8');
+            if (!isset($tree[$mKey]['children'][$cKey]) && !isset($existingLabels[$cLabelNorm])) {
+                $tree[$mKey]['children'][$cKey] = [
+                    'nombre'  => ($cMeta['nombre'] ?? $cKey) . ' ✨',
+                    'icono'   => $cMeta['icono'] ?? 'bi-stars text-info',
+                    'ruta'    => $cMeta['ruta'] ?? '#',
+                    'default' => true,
+                ];
+                $autoDiscoveredCount++;
+            }
+        }
+    }
+
+    return $tree;
 }
