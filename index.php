@@ -98,7 +98,7 @@ if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $rawId   = strtolower(preg_replace('/[^a-zA-Z0-9_-]/', '', $_POST['plat_id'] ?? ''));
         $nombre  = trim($_POST['plat_nombre'] ?? '');
         $siglas  = strtoupper(trim($_POST['plat_siglas'] ?? ''));
-        $motor   = trim($_POST['plat_motor'] ?? 'PHP Nativo (Inbox 2.0)');
+        $motor   = trim($_POST['plat_motor'] ?? 'Laravel 11 (Inbox 2.0)');
         $url     = rtrim(trim($_POST['plat_url'] ?? ''), '/');
         $syncUrl = trim($_POST['plat_sync_url'] ?? '');
         $color   = trim($_POST['plat_color'] ?? '#2563eb');
@@ -838,8 +838,8 @@ foreach ($tree as $mKey => $mMeta) {
                     <div class="col-12">
                         <label class="form-label small fw-bold">Motor / Arquitectura de la Plataforma</label>
                         <select name="plat_motor" id="plat_motor" class="form-select">
-                            <option value="PHP Nativo (Inbox 2.0)">PHP Nativo (tipo bpm_unela)</option>
-                            <option value="Laravel 11 (Inbox 2.0)">Laravel 11 (tipo inbox_cefi)</option>
+                            <option value="Laravel 11 (Inbox 2.0)" selected>Laravel 11 (Estándar para nuevas plataformas — tipo inbox_cefi)</option>
+                            <option value="PHP Nativo (Inbox 2.0)">PHP Nativo (Legacy — tipo bpm_unela)</option>
                         </select>
                     </div>
                     <div class="col-12">
