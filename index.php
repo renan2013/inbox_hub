@@ -549,6 +549,14 @@ foreach ($tree as $mKey => $mMeta) {
             <i class="bi bi-exclamation-octagon-fill me-1"></i>Centro de Averías
             <span class="badge bg-light text-dark rounded-pill ms-1"><?= $openTicketsCount ?></span>
         </button>
+        <?php if (!empty($ticketState['tickets'])): ?>
+        <form method="POST" class="d-inline" onsubmit="return confirm('¿Eliminar TODAS las averías de prueba del Hub y de las plataformas (CEFI/UNELA)?');">
+            <input type="hidden" name="hub_action" value="delete_all_tickets">
+            <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold" title="Botón provisional para limpiar reportes de prueba">
+                <i class="bi bi-trash3-fill me-1"></i>Limpiar Pruebas (<?= count($ticketState['tickets']) ?>)
+            </button>
+        </form>
+        <?php endif; ?>
         <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 fw-semibold" data-bs-toggle="modal" data-bs-target="#modalPlatformMeta" onclick="openNewPlatformModal()">
             <i class="bi bi-plus-circle me-1"></i>Añadir Plataforma / Cliente
         </button>
