@@ -619,12 +619,6 @@ function get_master_menu_tree(): array {
                     'ruta'    => '/configuracion?tab=smtp',
                     'default' => true,
                 ],
-                'item.cfg_modulos' => [
-                    'nombre'  => 'Módulos y Personalización',
-                    'icono'   => 'bi-toggles2 text-danger',
-                    'ruta'    => '/configuracion?tab=modulos',
-                    'default' => true,
-                ],
                 'item.cfg_seguridad' => [
                     'nombre'  => 'Clave Maestra Superior',
                     'icono'   => 'bi-key-fill text-info',
