@@ -638,6 +638,131 @@ foreach ($tree as $mKey => $mMeta) {
         <?php endforeach; ?>
     </div>
 
+    <!-- ======================================================================= -->
+    <!-- SECCIÓN MUY VISIBLE EN PORTADA: RECEPCIÓN Y SOLUCIÓN DE AVERÍAS EN VIVO -->
+    <!-- ======================================================================= -->
+    <?php
+        $allTickets   = $ticketState['tickets'] ?? [];
+        $countRep     = 0;
+        $countRev     = 0;
+        $countSol     = 0;
+        foreach ($allTickets as $tItem) {
+            $stT = $tItem['estado'] ?? 'reportado';
+            if ($stT === 'solucionado') $countSol++;
+            elseif ($stT === 'en_revision') $countRev++;
+            else $countRep++;
+        }
+    ?>
+    <div id="seccionRecepcionAverias" class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden" style="border: 2px solid <?= $countRep > 0 ? '#ef4444' : '#cbd5e1' ?> !important;">
+        <div class="px-4 py-3 text-white d-flex flex-wrap justify-content-between align-items-center gap-3"
+             style="background: linear-gradient(135deg, <?= $countRep > 0 ? '#7f1d1d 0%, #b91c1c 100%' : '#0f172a 0%, #1e293b 100%' ?>);">
+            <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center justify-content-center rounded-3 bg-white bg-opacity-10 border border-white border-opacity-25" style="width:46px;height:46px;font-size:1.4rem;">
+                    <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                </div>
+                <div>
+                    <div class="d-flex align-items-center gap-2">
+                        <h5 class="fw-bold mb-0">🚨 Centro de Recepción y Solución de Averías</h5>
+                        <span class="badge bg-warning text-dark fw-bold rounded-pill">En Tiempo Real</span>
+                    </div>
+                    <div class="small text-white-50">
+                        Notificaciones automáticas a WhatsApp (n8n) y al correo interno del proveedor: <code class="text-info fw-bold"><?= htmlspecialchars(INBOX_CREATOR_EMAIL) ?></code>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="badge bg-danger rounded-pill px-3 py-2">🔴 Pendientes: <?= $countRep ?></span>
+                <span class="badge bg-warning text-dark rounded-pill px-3 py-2">🟠 En Revisión: <?= $countRev ?></span>
+                <span class="badge bg-success rounded-pill px-3 py-2">🟢 Solucionadas: <?= $countSol ?></span>
+                <button type="button" class="btn btn-sm btn-light fw-bold rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#modalCentroAverias">
+                    <i class="bi bi-whatsapp text-success me-1"></i>Configurar Webhook n8n / Probar Alerta
+                </button>
+            </div>
+        </div>
+
+        <div class="card-body p-0 bg-white">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-uppercase">
+                        <tr>
+                            <th class="ps-4" style="width:170px;">Ticket / Plataforma</th>
+                            <th style="width:200px;">Etiqueta &amp; Prioridad</th>
+                            <th>Causa del Problema &amp; Pantalla Origen</th>
+                            <th style="width:140px;">Evidencia Gráfica</th>
+                            <th class="pe-4" style="width:290px;">Acción / Solucionar Avería</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($allTickets)): ?>
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted">
+                                    <i class="bi bi-shield-check fs-2 text-success d-block mb-1"></i>
+                                    <strong>Bandeja de Averías Limpia:</strong> Cuando un usuario reporte un problema desde el ícono superior de <strong>CEFI</strong> o <strong>UNELA</strong>, aparecerá aquí al instante junto con su captura de pantalla.
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach (array_slice($allTickets, 0, 15) as $tk): ?>
+                                <?php
+                                    $prio = strtolower($tk['prioridad'] ?? 'alta');
+                                    $prioBadge = $prio === 'urgente' ? 'bg-danger' : ($prio === 'alta' ? 'bg-warning text-dark' : 'bg-info text-dark');
+                                    $est = $tk['estado'] ?? 'reportado';
+                                ?>
+                                <tr class="<?= $est === 'solucionado' ? 'opacity-75 bg-light' : '' ?>">
+                                    <td class="ps-4">
+                                        <div class="fw-bold text-dark"><?= htmlspecialchars($tk['hub_id'] ?? ('#' . ($tk['id'] ?? ''))) ?></div>
+                                        <span class="badge bg-primary rounded-pill"><?= htmlspecialchars($tk['client_siglas'] ?? $tk['client_id'] ?? 'INBOX') ?></span>
+                                        <div class="small text-muted mt-1"><?= htmlspecialchars($tk['fecha_creacion'] ?? '') ?></div>
+                                        <div class="small text-secondary"><i class="bi bi-person-fill me-1"></i><?= htmlspecialchars($tk['usuario_nombre'] ?? '') ?></div>
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold text-dark small mb-1"><?= htmlspecialchars($tk['etiqueta'] ?? 'General') ?></div>
+                                        <span class="badge <?= $prioBadge ?> rounded-pill text-uppercase" style="font-size:0.68rem;"><?= htmlspecialchars($prio) ?></span>
+                                    </td>
+                                    <td>
+                                        <div class="fw-bold text-dark"><?= htmlspecialchars($tk['titulo'] ?? '') ?></div>
+                                        <div class="small text-secondary"><?= nl2br(htmlspecialchars($tk['problema'] ?? '')) ?></div>
+                                        <?php if (!empty($tk['url_origen'])): ?>
+                                            <div class="mt-1">
+                                                <a href="<?= htmlspecialchars($tk['url_origen']) ?>" target="_blank" class="small text-primary fw-semibold text-decoration-none">
+                                                    <i class="bi bi-box-arrow-up-right me-1"></i>Abrir pantalla del fallo
+                                                </a>
+                                            </div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($tk['evidencia_url'])): ?>
+                                            <a href="<?= htmlspecialchars($tk['evidencia_url']) ?>" target="_blank" class="d-inline-block text-decoration-none">
+                                                <img src="<?= htmlspecialchars($tk['evidencia_url']) ?>" alt="Evidencia" style="width:90px;height:58px;object-fit:cover;border-radius:8px;border:2px solid #0ea5e9;" class="shadow-sm">
+                                                <div class="small text-info fw-bold mt-1"><i class="bi bi-zoom-in me-1"></i>Ver Captura</div>
+                                            </a>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary-subtle text-secondary rounded-pill"><i class="bi bi-image me-1"></i>Sin captura</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="pe-4">
+                                        <form method="POST" class="d-flex flex-column gap-1">
+                                            <input type="hidden" name="hub_action" value="update_ticket_status">
+                                            <input type="hidden" name="hub_id" value="<?= htmlspecialchars($tk['hub_id'] ?? '') ?>">
+                                            <div class="d-flex gap-1">
+                                                <select name="estado" class="form-select form-select-sm fw-bold <?= $est === 'solucionado' ? 'border-success text-success' : 'border-danger text-danger' ?>">
+                                                    <option value="reportado" <?= $est === 'reportado' ? 'selected' : '' ?>>🔴 Reportado</option>
+                                                    <option value="en_revision" <?= $est === 'en_revision' ? 'selected' : '' ?>>🟠 En Revisión</option>
+                                                    <option value="solucionado" <?= $est === 'solucionado' ? 'selected' : '' ?>>🟢 Solucionado</option>
+                                                </select>
+                                                <button type="submit" class="btn btn-sm btn-dark fw-bold px-3">Guardar</button>
+                                            </div>
+                                            <input type="text" name="solucion" class="form-control form-control-sm" placeholder="Escribir solución aplicada..." value="<?= htmlspecialchars($tk['solucion'] ?? '') ?>">
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- FORMULARIO MAESTRO DE LA PLATAFORMA SELECCIONADA -->
     <form method="POST" id="hubMasterForm">
         <input type="hidden" name="client_id" value="<?= htmlspecialchars($selectedId) ?>">
