@@ -510,7 +510,7 @@ foreach ($tree as $mKey => $mMeta) {
             <i class="bi bi-plus-circle me-1"></i>Añadir Plataforma / Cliente
         </button>
         <a href="index.php?logout=1" class="btn btn-sm btn-outline-light rounded-pill px-3">
-            <i class="bi bi-lock-fill me-1"></i>Bloquear Hub
+            <i class="bi bi-box-arrow-right me-1"></i>Cerrar Sesión
         </a>
     </div>
     <?php endif; ?>
