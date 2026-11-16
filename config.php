@@ -385,12 +385,6 @@ function get_master_menu_tree(): array {
                     'ruta'    => '/boletas/morosidad',
                     'default' => true,
                 ],
-                'item.parametros_pagos' => [
-                    'nombre'  => 'Configuración de Pagos y Firmas',
-                    'icono'   => 'bi-gear-fill text-secondary',
-                    'ruta'    => '/configuracion/pagos',
-                    'default' => true,
-                ],
                 'item.repositorio_actas' => [
                     'nombre'  => 'Repositorio de Actas',
                     'icono'   => 'bi-journal-bookmark-fill text-danger',
@@ -572,8 +566,8 @@ function get_master_menu_tree(): array {
                     'default' => true,
                 ],
                 'item.cfg_pagos' => [
-                    'nombre'  => 'Pagos, Morosidad e Intereses',
-                    'icono'   => 'bi-cash-coin text-success',
+                    'nombre'  => 'Configuración de Pagos y Firmas',
+                    'icono'   => 'bi-gear-fill text-success',
                     'ruta'    => '/configuracion/pagos',
                     'default' => true,
                 ],
@@ -658,7 +652,7 @@ function get_default_flags_for_profile(string $profile = 'full_suite'): array {
     }
 
     // Sincronizar banderas macro
-    $flags['boletas_matricula'] = !empty($flags['item.generar_boleta']) || !empty($flags['item.gestion_boletas']) || !empty($flags['item.parametros_pagos']);
+    $flags['boletas_matricula'] = !empty($flags['item.generar_boleta']) || !empty($flags['item.gestion_boletas']);
     $flags['finanzas']          = !empty($flags['item.estado_cuenta']) || !empty($flags['item.morosidad']);
     $flags['whatsapp_n8n']      = !empty($flags['item.campanas_whatsapp']) || !empty($flags['item.suite_whatsapp']);
 

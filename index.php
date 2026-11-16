@@ -259,7 +259,7 @@ if ($isAuthenticated && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Sincronizar banderas macro de compatibilidad
-            $newFlags['boletas_matricula'] = !empty($newFlags['item.generar_boleta']) || !empty($newFlags['item.gestion_boletas']) || !empty($newFlags['item.parametros_pagos']);
+            $newFlags['boletas_matricula'] = !empty($newFlags['item.generar_boleta']) || !empty($newFlags['item.gestion_boletas']);
             $newFlags['finanzas']          = !empty($newFlags['item.estado_cuenta']) || !empty($newFlags['item.morosidad']);
             $newFlags['whatsapp_n8n']      = !empty($newFlags['item.campanas_whatsapp']) || !empty($newFlags['item.suite_whatsapp']);
 
